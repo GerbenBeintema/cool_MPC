@@ -11,14 +11,13 @@ from matplotlib import pyplot as plt
 from .tictoctimer import Tictoctimer
 
 class MPC_solver(object):
-    def __init__(self, f_batched, h_batched, nu, ny, nx=None, eps_tol=0.015):
+    def __init__(self, f_batched, h_batched, nu, ny, nx=None):
         self.f_batched = f_batched
         self.h_batched = h_batched
         self.nu = nu
         self.ny = ny
         self.nx = nx
         self.timer = Tictoctimer()
-        self.eps_tol = eps_tol
     
     def f(self, x, u):
         x = torch.as_tensor(x,dtype=torch.float32)
@@ -118,21 +117,24 @@ class MPC_solver(object):
         self.timer.toc('solve')
 
         dusol = [sys[du[i]] for i in range(T)]
-        def unow(eps):
-            u = [eps*dui + u0i for dui, u0i in zip(dusol, u_inits)]
+        def unow(step_size):
+            u = [step_size*dui + u0i for dui, u0i in zip(dusol, u_inits)]
             return u if u_bounds is None else np.clip(u, umin, umax)
-        eval_now = lambda eps: self.evaluate(x_init, unow(eps[0]), y_target, y_weight, u_weight)
-        out = minimize(fun=eval_now, x0=[0.5], method='Nelder-Mead', tol=self.eps_tol)
+        eval_now = lambda step_size: self.evaluate(x_init, unow(step_size[0]), y_target, y_weight, u_weight)
+        out = minimize(fun=eval_now, x0=[self.line_search_start], method='Nelder-Mead', tol=self.step_size_tol)
 
-        eps_best = out.x[0]
+        step_size_best = out.x[0]
         if verbose:
-            print('eps:', eps_best, 'val', out.fun, 'nit', out.nit)
+            print(f'step size: {step_size_best:.3f}  loss value: {out.fun:.5f} optimization steps: {out.nit}')
         self.timer.pause()
 
-        usol = unow(eps_best)
+        usol = unow(step_size_best)
         return usol
 
-    def solve(self, x_init, T, u_inits, y_targets, y_weight=1.0, u_weight=1e-5, u_bounds=None, u_diff_tol = 1e-4, plot=False, verbose=0):
+    def solve(self, x_init, T, u_inits, y_targets, y_weight=1.0, u_weight=1e-5, u_bounds=None, u_diff_tol = 1e-4, plot=False, verbose=0, step_size_tol=0.015, line_search_start=1.0):
+        self.step_size_tol = step_size_tol
+        self.line_search_start = line_search_start
+
         self.timer = Tictoctimer()
         if plot:
             ax1 = plt.subplot(1,2,1)
@@ -154,7 +156,7 @@ class MPC_solver(object):
             
             u_diff = np.mean((np.array(u_new)-np.array(u_old))**2)**0.5
             if verbose:
-                print(f'Itteration {k} u_diff={u_diff}')
+                print(f'Solve itteration {k}: u_diff={u_diff:.5f}')
             if u_diff < u_diff_tol:
                 return u_new
             else:

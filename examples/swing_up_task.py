@@ -1,8 +1,10 @@
-from torch import adaptive_max_pool1d, nn
+from torch import nn
 import torch
 from matplotlib import pyplot as plt
 import numpy as np
 
+#### Define system ####
+# the f and h have the first dimention as batch dimention on x, u, and y 
 class RK4_f(nn.Module):
     def forward(self, x, u):
         k1 = self.dt*self.deriv(x,u)
@@ -10,11 +12,6 @@ class RK4_f(nn.Module):
         k3 = self.dt*self.deriv(x+k2/2,u)
         k4 = self.dt*self.deriv(x+k3,u)
         return x + (k1+2*k2+2*k3+k4)/6
-
-m = 1
-l = 1
-g = 1
-dt = 0.3
 
 class pendulum_f(RK4_f):
     def __init__(self, m, l, g, dt, gamma=0.01):
@@ -45,34 +42,52 @@ class pendulum_h(nn.Module):
         energy = 1/2*self.m*self.l**2*dth**2 - self.m*self.l*self.g*(1 + torch.cos(th))
         return torch.stack([sinth,costh+1,energy,th],dim=1)
 
-
+### create system ###
+m = 1
+l = 1
+g = 1
+dt = 0.3
 h = pendulum_h(m, l, g)
 f = pendulum_f(m, l, g, dt)
-T = 50
-y_target = [0, 0, 0, 0]
-x_init = [0, 0]
-u_inits = [1]*T
-y_targets = [y_target]*T
+nu = None # None = u is just a number
+ny = 4    # 4 outputs
+nx = 2    # 2 states
 
-nu = None
-ny = 3
-nx = 2
+### define target ###
+y_target = [0, 0, 0, 0]  # target output
+x_init = [0, 0]          # initial state
+
+### MPC paramters ###
+T = 50                   # MPC time horizon
+u_inits = [1]*T          # initial estimated inputs
+y_targets = [y_target]*T # y_targets is the same for all time
+y_weight = [0.0, 0.0, 1.0, 0]
+u_bounds = (-0.3,0.3)  # bounds on the input
+u_weight = 0.01          # weight on the input
 
 from cool_MPC import MPC_solver
 mpc = MPC_solver(f, h, nu, ny, nx=nx)
 
+## prepare plotting ##
 plt.figure(figsize=(12,4))
 ax1 = plt.subplot(1,3,1)
-plt.title('u')
+plt.title('input (u)')
+plt.xlabel('index time')
 ax2 = plt.subplot(1,3,2)
 plt.title('energy')
+plt.xlabel('index time')
 ax3 = plt.subplot(1,3,3)
-plt.title('angel')
+plt.title('angle')
+plt.xlabel('index time')
 
-y_weight = [0.0, 0.1, 0, 0]
+import time
+
+t_start = time.time()
 u_sol = mpc.solve(x_init=x_init, T=T, u_inits=u_inits, \
-    y_targets=y_targets, y_weight=y_weight, u_weight=0.01, \
-        plot=False, u_bounds=(-0.5,0.5), verbose=1)
+    y_targets=y_targets, y_weight=y_weight, u_weight=u_weight, \
+        plot=False, u_bounds=u_bounds, verbose=1)
+print('time', time.time() - t_start)
+
 ax1.plot(u_sol)
 ysol = mpc.integrate(x_init, u_sol)
 ax2.plot(np.array(ysol)[:,2])

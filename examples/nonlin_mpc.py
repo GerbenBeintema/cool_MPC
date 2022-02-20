@@ -56,10 +56,10 @@ for beta in betas:
     T = 30
     print('beta', beta)
     mpc = MPC_solver(f, h, nu, ny, nx=nx)
-    u_sol = mpc.solve(x_init=x_init, T=T, u_inits=[0.1]*T, y_targets=[0]*T, u_weight=0.05, verbose=1)
+    u_sol = mpc.solve(x_init=x_init, T=T, u_inits=[0.1]*T, y_targets=[0]*T, u_weight=0.05, verbose=1, line_search_start=1)
     # print(mpc.timer.percent())
     plt.plot(mpc.integrate(x_init, u_sol))
 plt.legend([str(a) for a in betas])
-plt.show()
 print('total time:',time.time()-time0)
 print()
+plt.show()
