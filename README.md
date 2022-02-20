@@ -102,4 +102,4 @@ plt.show()
 
 result:
 
-![image](sing_up_fig.png)
+![image](swing_up_fig.png)
